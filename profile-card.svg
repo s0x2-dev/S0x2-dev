@@ -102,7 +102,7 @@
 
     <rect x="16" y="220" width="728" height="220" rx="8" fill="#1d1b1d" stroke="#212022" stroke-width="0.5"/>
 
-    <text x="137" y="293" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif" font-size="25" font-weight="700" fill="#c8c8c8" text-anchor="middle">1,869</text>
+    <text x="137" y="293" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif" font-size="25" font-weight="700" fill="#c8c8c8" text-anchor="middle">1,872</text>
     <text x="137" y="311" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif" font-size="12" fill="#8c8c8c" text-anchor="middle">Total Contributions</text>
     <text x="137" y="324" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif" font-size="11" fill="#8c8c8c" text-anchor="middle">Apr 30, 2024 - Present</text>
 
@@ -115,17 +115,17 @@
       <path d="M 19.48 12.35 c -1.57 -4.08 -7.16 -4.3 -5.81 -10.23 c .1 -.44 -.37 -.78 -.75 -.55 C 9.29 3.71 6.68 8 8.87 13.62 c .18 .46 -.36 .89 -.75 .59 c -1.81 -1.37 -2 -3.34 -1.84 -4.75 c .06 -.52 -.62 -.77 -.91 -.34 C 4.69 10.16 4 11.84 4 14.37 c .38 5.6 5.11 7.32 6.81 7.54 c 2.43 .31 5.06 -.14 6.95 -1.87 c 2.08 -1.93 2.84 -5.01 1.72 -7.69 z"
             fill="none" stroke="#91a1f1" stroke-width="3.00" stroke-linejoin="round" stroke-linecap="round"/>
     </g>
-    <text x="380" y="289" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif" font-size="25" font-weight="700" fill="#c8c8c8" text-anchor="middle">7</text>
+    <text x="380" y="289" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif" font-size="25" font-weight="700" fill="#c8c8c8" text-anchor="middle">8</text>
     <text x="380" y="344" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif" font-size="17" font-weight="700" fill="#91a1f1" text-anchor="middle">Current Streak</text>
-    <text x="380" y="362" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif" font-size="11" fill="#8c8c8c" text-anchor="middle">Sep 2 - Sep 8</text>
+    <text x="380" y="362" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif" font-size="11" fill="#8c8c8c" text-anchor="middle">Sep 2 - Sep 9</text>
 
     <text x="621" y="293" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif" font-size="25" font-weight="700" fill="#c8c8c8" text-anchor="middle">25</text>
     <text x="621" y="311" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif" font-size="12" fill="#8c8c8c" text-anchor="middle">Longest Streak</text>
 
     
         <line x1="16" y1="390" x2="744" y2="390" stroke="#212022" stroke-width="0.5"/>
-        <rect x="32" y="401" width="206" height="26" rx="4" fill="#1db95422"/>
+        <rect x="32" y="401" width="134" height="26" rx="4" fill="#1db95422"/>
         <circle cx="44" cy="415" r="4" fill="#1db954"/>
-        <text x="56" y="420" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif" font-size="12" font-weight="600" fill="#c8c8c8">They Don&amp;#x27;t Know — LVNX</text>
+        <text x="56" y="420" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif" font-size="12" font-weight="600" fill="#c8c8c8">angelonia — grcz</text>
     
   </svg>
