@@ -102,7 +102,7 @@
 
     <rect x="16" y="220" width="728" height="220" rx="8" fill="#1d1b1d" stroke="#212022" stroke-width="0.5"/>
 
-    <text x="137" y="293" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif" font-size="25" font-weight="700" fill="#c8c8c8" text-anchor="middle">1,952</text>
+    <text x="137" y="293" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif" font-size="25" font-weight="700" fill="#c8c8c8" text-anchor="middle">1,958</text>
     <text x="137" y="311" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif" font-size="12" fill="#8c8c8c" text-anchor="middle">Total Contributions</text>
     <text x="137" y="324" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif" font-size="11" fill="#8c8c8c" text-anchor="middle">Apr 30, 2024 - Present</text>
 
@@ -124,8 +124,8 @@
 
     
         <line x1="16" y1="390" x2="744" y2="390" stroke="#212022" stroke-width="0.5"/>
-        <rect x="32" y="401" width="173" height="26" rx="4" fill="#1db95422"/>
+        <rect x="32" y="401" width="206" height="26" rx="4" fill="#1db95422"/>
         <circle cx="44" cy="415" r="4" fill="#1db954"/>
-        <text x="56" y="420" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif" font-size="12" font-weight="600" fill="#c8c8c8">2 Handys — Gola Gianni</text>
+        <text x="56" y="420" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif" font-size="12" font-weight="600" fill="#c8c8c8">windows breakcore — proloxx</text>
     
   </svg>
