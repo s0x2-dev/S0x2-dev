@@ -1,452 +1,185 @@
-const https = require("https");
 const fs = require("fs");
 
-const username = "S0x2-dev";
-const token = process.env.GITHUB_TOKEN;
-const spotifyUserId = "31leep2d5rpspzgszzi6glolhul4";
-const spotifyGreen = "#1db954";
+const username = "S0x2-dev", token = process.env.GITHUB_TOKEN, spotifyUserId = "31leep2d5rpspzgszzi6glolhul4", spotifyGreen = "#1db954";
+const IGNORED_LANGUAGES = new Set(["HTML", "CSS", "Makefile", "Shell"]);
+const theme = { background: "#171517", cardBackground: "#1d1b1d", border: "#212022", accent: "#91a1f1", text: "#c8c8c8", muted: "#8c8c8c", font: `font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif"` };
 
-const theme = {
-    background: "#171517",
-    cardBackground: "#1d1b1d",
-    border: "#212022",
-    accent: "#91a1f1",
-    text: "#c8c8c8",
-    muted: "#8c8c8c",
-    font: `font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif"`,
-};
+const escapeXml = (v) => String(v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&apos;");
+const decodeEntities = (t) => t.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&apos;/g, "'").replace(/&#(\d+);/g, (_, c) => String.fromCharCode(parseInt(c, 10)));
+const formatDate = (iso) => iso ? new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "";
+const formatNumber = (n) => n >= 1000 ? (n / 1000).toFixed(1) + "k" : String(n);
 
-function escapeXml(value) {
-    return String(value).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&apos;");
+async function executeGraphQL(query, variables) {
+  const res = await fetch("https://api.github.com/graphql", { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", "User-Agent": "profile-card-generator" }, body: JSON.stringify({ query, variables }), signal: AbortSignal.timeout(10000) });
+  if (!res.ok) throw new Error(`GitHub GraphQL API error: ${res.status} ${res.statusText}`);
+  return res.json();
 }
 
-function executeGraphQL(query, variables) {
-    return new Promise((resolve, reject) => {
-        const body = JSON.stringify({ query, variables });
-        const options = {
-            hostname: "api.github.com",
-            path: "/graphql",
-            method: "POST",
-            headers: {
-                Authorization: `Bearer ${token}`,
-                "Content-Type": "application/json",
-                "Content-Length": Buffer.byteLength(body),
-                "User-Agent": "profile-card-generator",
-            },
-        };
-
-        const request = https.request(options, (response) => {
-            let data = "";
-            response.on("data", (chunk) => (data += chunk));
-            response.on("end", () => {
-                try {
-                    resolve(JSON.parse(data));
-                } catch (error) {
-                    reject(error);
-                }
-            });
-        });
-
-        request.on("error", reject);
-        request.write(body);
-        request.end();
-    });
-}
-
-function decodeEntities(text) {
-    return text.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&apos;/g, "'").replace(/&#(\d+);/g, (_, code) => String.fromCharCode(parseInt(code, 10)));
-}
-
-function fetchSpotifyData() {
-    return new Promise((resolve) => {
-        const fallback = {
-            trackName: null,
-            trackColor: spotifyGreen,
-            isPlaying: false
-        };
-        const options = {
-            hostname: "spotify-github-profile.kittinanx.com",
-            path: `/api/view?uid=${spotifyUserId}`,
-            method: "GET",
-            headers: { "User-Agent": "profile-card-generator" },
-        };
-
-        const request = https.request(options, (response) => {
-            let data = "";
-            response.on("data", (chunk) => (data += chunk));
-            response.on("end", () => {
-                try {
-                    if (/class="not-play"/.test(data)) {
-                        resolve(fallback);
-                        return;
-                    }
-
-                    const grab = (className) => {
-                        const match = data.match(new RegExp(`class="${className}"[^>]*>([^<]+)<`));
-                        return match ? decodeEntities(match[1]).trim() : null;
-                    };
-
-                    const song = grab("song");
-                    const artist = grab("artist");
-
-                    if (!song) {
-                        resolve(fallback);
-                        return;
-                    }
-
-                    const trackName = artist ? `${song} — ${artist}` : song;
-                    resolve({
-                        trackName,
-                        trackColor: spotifyGreen,
-                        isPlaying: true
-                    });
-                } catch (error) {
-                    resolve(fallback);
-                }
-            });
-        });
-
-        request.on("error", () => resolve(fallback));
-        request.end();
-    });
+async function fetchSpotifyData() {
+  const fallback = { trackName: null, trackColor: spotifyGreen, isPlaying: false };
+  try {
+    const res = await fetch(`https://spotify-github-profile.kittinanx.com/api/view?uid=${spotifyUserId}`, { headers: { "User-Agent": "profile-card-generator" }, signal: AbortSignal.timeout(5000) });
+    if (!res.ok) return fallback;
+    const data = await res.text();
+    if (/class="not-play"/.test(data)) return fallback;
+    const grab = (cls) => data.match(new RegExp(`class="${cls}"[^>]*>([^<]+)<`))?.[1] ? decodeEntities(data.match(new RegExp(`class="${cls}"[^>]*>([^<]+)<`))[1]).trim() : null;
+    const song = grab("song"), artist = grab("artist");
+    return song ? { trackName: artist ? `${song} — ${artist}` : song, trackColor: spotifyGreen, isPlaying: true } : fallback;
+  } catch { return fallback; }
 }
 
 async function fetchGitHubData() {
-    const now = new Date();
-    const currentYear = now.getFullYear();
-    const previousYear = currentYear - 1;
-
-    const yearFragments = [
-        {
-            year: currentYear,
-            key: "current"
-        }, {
-            year: previousYear,
-            key: "previous"
-        },
-    ].map(({ year, key }) => ` ${key}: contributionsCollection(from: "${year}-01-01T00:00:00Z"to: "${year}-12-31T23:59:59Z") {
-        totalCommitContributions
-        totalPullRequestContributions
-        totalIssueContributions
-        restrictedContributionsCount
-    }`).join("");
-
-    const { data } = await executeGraphQL(`
-        query($login: String!) {
-          user(login: $login) {
-            repositories(ownerAffiliations: OWNER, first: 100) {
-              nodes {
-                stargazerCount
-                languages(first: 10, orderBy: { field: SIZE, direction: DESC }) {
-                  edges {
-                    size node { name color }
-                  }
-                }
-              }
-            }
-            contributionsCollection {
-              contributionCalendar {
-                totalContributions
-                weeks {
-                  contributionDays { contributionCount date }
-                }
-              }
-            }
-            ${yearFragments}
-            followers { totalCount }
-            repositoriesContributedTo(
-              first: 1
-              contributionTypes: [COMMIT, PULL_REQUEST, REPOSITORY, PULL_REQUEST_REVIEW]
-            ) { totalCount }
-          }
-        }
-    `, {
-        login: username
-    });
-    return data.user;
+  const cur = new Date().getFullYear(), prev = cur - 1;
+  const yearFragments = [{ year: cur, key: "current" }, { year: prev, key: "previous" }].map(({ year, key }) => `${key}: contributionsCollection(from: "${year}-01-01T00:00:00Z", to: "${year}-12-31T23:59:59Z") { totalCommitContributions totalPullRequestContributions totalIssueContributions restrictedContributionsCount }`).join(" ");
+  const { data } = await executeGraphQL(`query($login: String!) { user(login: $login) { createdAt repositories(ownerAffiliations: OWNER, first: 100) { nodes { stargazerCount languages(first: 10, orderBy: { field: SIZE, direction: DESC }) { edges { size node { name color } } } } } contributionsCollection { contributionCalendar { totalContributions weeks { contributionDays { contributionCount date } } } } ${yearFragments} followers { totalCount } repositoriesContributedTo(first: 1, contributionTypes: [COMMIT, PULL_REQUEST, REPOSITORY, PULL_REQUEST_REVIEW]) { totalCount } } }`, { login: username });
+  return data.user;
 }
 
 function calculateStreak(weeks) {
-    const allDays = weeks.flatMap((week) => week.contributionDays).sort((a, b) => (a.date < b.date ? 1 : -1));
-    const today = new Date().toISOString().slice(0, 10);
+  const allDays = weeks.flatMap((w) => w.contributionDays).sort((a, b) => (a.date < b.date ? 1 : -1));
+  const today = new Date().toISOString().slice(0, 10);
+  let current = 0, longest = 0, temp = 0, startDate = "", endDate = "";
 
-    let currentStreakCount = 0;
-    let currentStreakStart = "";
-    let currentStreakEnd = "";
+  for (const day of allDays) {
+    if (day.date > today) continue;
+    if (current === 0 && day.contributionCount === 0 && day.date !== today) break;
+    if (day.contributionCount > 0) {
+      current++;
+      if (!endDate) endDate = day.date;
+      startDate = day.date;
+    } else if (day.date !== today) break;
+  }
 
-    for (const day of allDays) {
-        if (day.date > today) continue;
-        if (currentStreakCount === 0 && day.contributionCount === 0 && day.date !== today) break;
-        if (day.contributionCount > 0) {
-            currentStreakCount++;
-            if (!currentStreakEnd) {
-                currentStreakEnd = day.date;
-            }
-            currentStreakStart = day.date;
-        } else if (day.date !== today) break;
-    }
-
-    let longestStreakCount = 0;
-    let tempStreakCount = 0;
-
-    for (const day of [...allDays].reverse()) {
-        if (day.contributionCount > 0) {
-            tempStreakCount++;
-            if (tempStreakCount > longestStreakCount) {
-                longestStreakCount = tempStreakCount;
-            }
-        } else {
-            tempStreakCount = 0;
-        }
-    }
-
-    return {
-        current: currentStreakCount,
-        longest: longestStreakCount,
-        startDate: currentStreakStart,
-        endDate: currentStreakEnd,
-    };
+  for (const day of [...allDays].reverse()) {
+    temp = day.contributionCount > 0 ? temp + 1 : 0;
+    if (temp > longest) longest = temp;
+  }
+  return { current, longest, startDate, endDate };
 }
 
 function getTopLanguages(repositories) {
-    const languageMap = {};
-
-    for (const repo of repositories) {
-        for (const { size, node } of repo.languages.edges) {
-            if (!languageMap[node.name]) {
-                languageMap[node.name] = {
-                    size: 0,
-                    color: node.color || theme.muted
-                };
-            }
-            languageMap[node.name].size += size;
-        }
+  const map = {};
+  for (const repo of repositories) {
+    for (const { size, node } of repo.languages.edges) {
+      if (IGNORED_LANGUAGES.has(node.name)) continue;
+      map[node.name] = map[node.name] || { size: 0, color: node.color || theme.muted };
+      map[node.name].size += size;
     }
-
-    const topLanguages = Object.entries(languageMap).sort((a, b) => b[1].size - a[1].size).slice(0, 6);
-    const totalSize = topLanguages.reduce((sum, [, data]) => sum + data.size, 0);
-
-    return topLanguages.map(([name, { size, color }]) => ({
-        name: name.length > 13 ? name.slice(0, 12) + "." : name,
-        color,
-        percentage: ((size / totalSize) * 100).toFixed(1),
-    }));
-}
-
-function formatDate(isoDate) {
-    if (!isoDate) return "";
-    return new Date(isoDate).toLocaleDateString("en-US", { month: "short", day: "numeric" });
-}
-
-function formatNumber(number) {
-    return number >= 1000 ? (number / 1000).toFixed(1) + "k" : String(number);
+  }
+  const top = Object.entries(map).sort((a, b) => b[1].size - a[1].size).slice(0, 5);
+  const totalSize = top.reduce((sum, [, d]) => sum + d.size, 0);
+  return totalSize === 0 ? [] : top.map(([name, { size, color }]) => ({ name: name.length > 13 ? name.slice(0, 12) + "." : name, color, percentage: ((size / totalSize) * 100).toFixed(1) }));
 }
 
 function calculateRank({ commits, pullRequests, issues, stars, followers }) {
-    const exponentialCdf = (x) => 1 - Math.pow(2, -x);
-    const normalCdf = (mean, sigma, value) => {
-        const z = (value - mean) / Math.sqrt(2 * sigma * sigma);
-        const t = 1 / (1 + 0.3275911 * Math.abs(z));
-        const erf = 1 - (((((1.061405429 * t - 1.453152027) * t + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t) * Math.exp(-z * z);
-        return 0.5 * (1 + (z >= 0 ? erf : -erf));
-    };
-
-    const score = (2 * exponentialCdf(commits / 250) + 3 * exponentialCdf(pullRequests / 50) + 1 * exponentialCdf(issues / 25) + 4 * exponentialCdf(stars / 50) + 1 * exponentialCdf(followers / 10)) / 11;
-
-    return 100 - 100 * normalCdf(score, 1, 0.75);
+  const expCdf = (x) => 1 - Math.pow(2, -x);
+  const normCdf = (m, s, v) => {
+    const z = (v - m) / Math.sqrt(2 * s * s), t = 1 / (1 + 0.3275911 * Math.abs(z));
+    const erf = 1 - (((((1.061405429 * t - 1.453152027) * t + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t) * Math.exp(-z * z);
+    return 0.5 * (1 + (z >= 0 ? erf : -erf));
+  };
+  const score = (2 * expCdf(commits / 250) + 3 * expCdf(pullRequests / 50) + 1 * expCdf(issues / 25) + 4 * expCdf(stars / 50) + 1 * expCdf(followers / 10)) / 11;
+  const percentile = 100 - 100 * normCdf(score, 1, 0.75);
+  const grade = percentile <= 5 ? "S" : percentile <= 25 ? "A+" : percentile <= 50 ? "A" : percentile <= 70 ? "B+" : percentile <= 85 ? "B" : "B-";
+  return { percentile, grade };
 }
 
-function createDonutChart(languages, centerX, centerY, radius) {
-    const circumference = 2 * Math.PI * radius;
-    let offset = 0;
-
-    const segments = languages.map(({ color, percentage }) => {
-        const dashLength = (percentage / 100) * circumference;
-        const segment = `
-            <circle cx="${centerX}" cy="${centerY}" r="${radius}" fill="none"
-            stroke="${color}" stroke-width="10"
-            stroke-dasharray="${dashLength.toFixed(2)} ${(circumference - dashLength).toFixed(2)}"
-            stroke-dashoffset="${(-offset).toFixed(2)}"
-            transform="rotate(-90 ${centerX} ${centerY})"/>
-        `;
-        offset += dashLength;
-        return segment;
-    });
-
-    return segments.join("\n") + `\n<circle cx="${centerX}" cy="${centerY}" r="${radius - 14}" fill="${theme.cardBackground}"/>`;
+function createDonutChart(languages, cx, cy, r) {
+  const circ = 2 * Math.PI * r;
+  let offset = 0;
+  const segments = languages.map(({ color, percentage }) => {
+    const dash = (percentage / 100) * circ, seg = `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${color}" stroke-width="10" stroke-dasharray="${dash.toFixed(2)} ${(circ - dash).toFixed(2)}" stroke-dashoffset="${(-offset).toFixed(2)}" transform="rotate(-90 ${cx} ${cy})"/>`;
+    offset += dash;
+    return seg;
+  }).join("\n");
+  return segments + `\n<circle cx="${cx}" cy="${cy}" r="${r - 14}" fill="${theme.cardBackground}"/>`;
 }
 
-function createLanguageLegend(languages, posX, startY, gap) {
-    return languages.map(({ name, color, percentage }, index) => {
-        const y = startY + index * gap;
-        return `
-            <circle cx="${posX}" cy="${y - 4}" r="4" fill="${color}"/>
-            <text x="${posX + 11}" y="${y}" ${theme.font} font-size="12" fill="${theme.text}">${escapeXml(name)} <tspan fill="${theme.muted}">${percentage}%</tspan></text>
-        `;
-    }).join("");
+function createLanguageLegend(languages, x, y, gap) {
+  return languages.map(({ name, color, percentage }, i) => `<circle cx="${x}" cy="${y + i * gap - 4}" r="4" fill="${color}"/><text x="${x + 11}" y="${y + i * gap}" ${theme.font} font-size="12" fill="${theme.text}">${escapeXml(name)} <tspan fill="${theme.muted}">${percentage}%</tspan></text>`).join("");
 }
 
-function createFlame(centerX, centerY, size, color, ringStroke) {
-    const scale = size / 24;
-    const translateX = centerX - 12 * scale;
-    const translateY = centerY - 12 * scale;
-    const strokeWidth = (ringStroke / scale).toFixed(2);
-
-    return `
-    <g transform="translate(${translateX} ${translateY}) scale(${scale})">
-      <path d="M 19.48 12.35 c -1.57 -4.08 -7.16 -4.3 -5.81 -10.23 c .1 -.44 -.37 -.78 -.75 -.55 C 9.29 3.71 6.68 8 8.87 13.62 c .18 .46 -.36 .89 -.75 .59 c -1.81 -1.37 -2 -3.34 -1.84 -4.75 c .06 -.52 -.62 -.77 -.91 -.34 C 4.69 10.16 4 11.84 4 14.37 c .38 5.6 5.11 7.32 6.81 7.54 c 2.43 .31 5.06 -.14 6.95 -1.87 c 2.08 -1.93 2.84 -5.01 1.72 -7.69 z"
-            fill="none" stroke="${color}" stroke-width="${strokeWidth}" stroke-linejoin="round" stroke-linecap="round"/>
-    </g>`;
+function createFlame(cx, cy, size, color, stroke) {
+  const scale = size / 24, tx = cx - 12 * scale, ty = cy - 12 * scale, sw = (stroke / scale).toFixed(2);
+  return `<g transform="translate(${tx} ${ty}) scale(${scale})"><path d="M 19.48 12.35 c -1.57 -4.08 -7.16 -4.3 -5.81 -10.23 c .1 -.44 -.37 -.78 -.75 -.55 C 9.29 3.71 6.68 8 8.87 13.62 c .18 .46 -.36 .89 -.75 .59 c -1.81 -1.37 -2 -3.34 -1.84 -4.75 c .06 -.52 -.62 -.77 -.91 -.34 C 4.69 10.16 4 11.84 4 14.37 c .38 5.6 5.11 7.32 6.81 7.54 c 2.43 .31 5.06 -.14 6.95 -1.87 c 2.08 -1.93 2.84 -5.01 1.72 -7.69 z" fill="none" stroke="${color}" stroke-width="${sw}" stroke-linejoin="round" stroke-linecap="round"/></g>`;
 }
 
-function createSpotifyCard(trackName, trackColor) {
-    const leftX = 32;
-    const rowY = 415;
-
-    if (!trackName) {
-        return `
-            <line x1="16" y1="390" x2="744" y2="390" stroke="${theme.border}" stroke-width="0.5"/>
-            <text x="${leftX}" y="${rowY}" ${theme.font} font-size="12" fill="${theme.muted}">♫ Not playing</text>
-        `;
-    }
-
-    const maxLength = 42;
-    const label = trackName.length > maxLength ? trackName.slice(0, maxLength - 1).trimEnd() + "…" : trackName;
-    const boxWidth = Math.min(340, 28 + label.length * 6.6);
-
-    return `
-        <line x1="16" y1="390" x2="744" y2="390" stroke="${theme.border}" stroke-width="0.5"/>
-        <rect x="${leftX}" y="${rowY - 14}" width="${boxWidth.toFixed(0)}" height="26" rx="4" fill="${trackColor}22"/>
-        <circle cx="${leftX + 12}" cy="${rowY}" r="4" fill="${trackColor}"/>
-        <text x="${leftX + 24}" y="${rowY + 5}" ${theme.font} font-size="12" font-weight="600" fill="${theme.text}">${escapeXml(label)}</text>
-    `;
+function createSpotifyCard(trackName, color, isPlaying) {
+  const leftX = 32, rowY = 415;
+  if (!trackName || !isPlaying) return `<line x1="16" y1="390" x2="744" y2="390" stroke="${theme.border}" stroke-width="0.5"/><text x="${leftX}" y="${rowY}" ${theme.font} font-size="12" fill="${theme.muted}">♫ Not playing</text>`;
+  const label = trackName.length > 42 ? trackName.slice(0, 41).trimEnd() + "…" : trackName, boxWidth = Math.min(360, 36 + label.length * 6.6).toFixed(0);
+  return `<line x1="16" y1="390" x2="744" y2="390" stroke="${theme.border}" stroke-width="0.5"/><rect x="${leftX}" y="${rowY - 14}" width="${boxWidth}" height="26" rx="4" fill="${color}22"/><g transform="translate(${leftX + 8}, ${rowY + 2})"><rect class="eq-bar eq-1" x="0" y="-11" width="2.5" height="11" rx="1.2" fill="${color}"/><rect class="eq-bar eq-2" x="4.5" y="-11" width="2.5" height="11" rx="1.2" fill="${color}"/><rect class="eq-bar eq-3" x="9" y="-11" width="2.5" height="11" rx="1.2" fill="${color}"/></g><text x="${leftX + 27}" y="${rowY + 5}" ${theme.font} font-size="12" font-weight="600" fill="${theme.text}">${escapeXml(label)}</text>`;
 }
 
-function generateSVG(userData, streakInfo, languages, starCount, commitCount, prCount, issueCount, rankPercentile, spotify) {
-    const totalContributions = userData.contributionsCollection.contributionCalendar.totalContributions;
+function generateSVG(userData, streakInfo, languages, stars, commits, prs, issues, rank, spotify, startDate) {
+  const total = userData.contributionsCollection.contributionCalendar.totalContributions;
+  const rankCirc = 2 * Math.PI * 38, rankFill = (1 - rank.percentile / 100) * rankCirc, rankGap = rankCirc - rankFill;
+  const flameSVG = createFlame(380, 245, 20, theme.accent, 2.5);
 
-    const rankCircumference = 2 * Math.PI * 38;
-    const rankFillLength = (1 - rankPercentile / 100) * rankCircumference;
-    const rankGapLength = rankCircumference - rankFillLength;
-
-    const donutChart = createDonutChart(languages, 685, 119, 34);
-    const languageLegend = createLanguageLegend(languages, 506, 64, 22);
-
-    const streakCenterX = 380;
-    const streakCenterY = 280;
-    const streakRadius = 34;
-    const streakRingStroke = 2.5;
-    const flameSize = 20;
-    const flameSVG = createFlame(streakCenterX, streakCenterY - streakRadius - 1, flameSize, theme.accent, streakRingStroke);
-
-    const sideNumberY = 293;
-    const sideLabelY = 311;
-    const sideDateY = 324;
-
-    return `<svg width="760" height="456" viewBox="0 0 760 456" xmlns="http://www.w3.org/2000/svg" role="img">
+  return `<svg width="760" height="456" viewBox="0 0 760 456" xmlns="http://www.w3.org/2000/svg" role="img">
     <title>S0x2-dev GitHub Stats</title>
-
     <defs>
-      <mask id="streak-ring-cut">
-        <rect width="760" height="456" fill="white"/>
-        <rect x="${streakCenterX - 6}" y="${streakCenterY - streakRadius - 2}" width="12" height="5" fill="black"/>
-      </mask>
+      <mask id="streak-cut"><rect width="760" height="456" fill="white"/><rect x="374" y="244" width="12" height="5" fill="black"/></mask>
+      <style>
+        .eq-bar { transform-origin: bottom; animation: eq 1.2s ease-in-out infinite alternate; }
+        .eq-1 { animation-delay: 0.1s; } .eq-2 { animation-delay: 0.4s; } .eq-3 { animation-delay: 0.7s; }
+        @keyframes eq { 0% { transform: scaleY(0.25); } 100% { transform: scaleY(1); } }
+      </style>
     </defs>
-
     <rect width="760" height="456" rx="10" fill="${theme.background}" stroke="${theme.border}" stroke-width="1"/>
-
+    
     <rect x="16" y="16" width="454" height="188" rx="8" fill="${theme.cardBackground}" stroke="${theme.border}" stroke-width="0.5"/>
     <text x="32" y="44" ${theme.font} font-size="15" font-weight="600" fill="${theme.accent}">S0x2-dev's GitHub Stats</text>
-
-    <text x="32" y="76" ${theme.font} font-size="13" fill="${theme.muted}">Total Stars Earned:</text>
-    <text x="260" y="76" ${theme.font} font-size="13" font-weight="600" fill="${theme.text}">${starCount}</text>
-
-    <text x="32" y="100" ${theme.font} font-size="13" fill="${theme.muted}">Total Commits (last year):</text>
-    <text x="260" y="100" ${theme.font} font-size="13" font-weight="600" fill="${theme.text}">${formatNumber(commitCount)}</text>
-
-    <text x="32" y="124" ${theme.font} font-size="13" fill="${theme.muted}">Total PRs:</text>
-    <text x="260" y="124" ${theme.font} font-size="13" font-weight="600" fill="${theme.text}">${prCount}</text>
-
-    <text x="32" y="148" ${theme.font} font-size="13" fill="${theme.muted}">Total Issues:</text>
-    <text x="260" y="148" ${theme.font} font-size="13" font-weight="600" fill="${theme.text}">${issueCount}</text>
-
-    <text x="32" y="172" ${theme.font} font-size="13" fill="${theme.muted}">Contributed to (last year):</text>
-    <text x="260" y="172" ${theme.font} font-size="13" font-weight="600" fill="${theme.text}">${userData.repositoriesContributedTo.totalCount}</text>
+    <text x="32" y="76" ${theme.font} font-size="13" fill="${theme.muted}">Total Stars Earned:</text><text x="260" y="76" ${theme.font} font-size="13" font-weight="600" fill="${theme.text}">${stars}</text>
+    <text x="32" y="100" ${theme.font} font-size="13" fill="${theme.muted}">Total Commits:</text><text x="260" y="100" ${theme.font} font-size="13" font-weight="600" fill="${theme.text}">${formatNumber(commits)}</text>
+    <text x="32" y="124" ${theme.font} font-size="13" fill="${theme.muted}">Total PRs:</text><text x="260" y="124" ${theme.font} font-size="13" font-weight="600" fill="${theme.text}">${prs}</text>
+    <text x="32" y="148" ${theme.font} font-size="13" fill="${theme.muted}">Total Issues:</text><text x="260" y="148" ${theme.font} font-size="13" font-weight="600" fill="${theme.text}">${issues}</text>
+    <text x="32" y="172" ${theme.font} font-size="13" fill="${theme.muted}">Contributed to (last year):</text><text x="260" y="172" ${theme.font} font-size="13" font-weight="600" fill="${theme.text}">${userData.repositoriesContributedTo.totalCount}</text>
 
     <circle cx="408" cy="112" r="38" fill="none" stroke="${theme.border}" stroke-width="3"/>
-    <circle cx="408" cy="112" r="38" fill="none" stroke="${theme.accent}" stroke-width="3"
-      stroke-dasharray="${rankFillLength.toFixed(1)} ${rankGapLength.toFixed(1)}"
-      stroke-dashoffset="0"
-      transform="rotate(-90 408 112)"/>
-    <text x="408" y="118" ${theme.font} font-size="18" font-weight="700" fill="${theme.text}" text-anchor="middle">A+</text>
+    <circle cx="408" cy="112" r="38" fill="none" stroke="${theme.accent}" stroke-width="3" stroke-dasharray="${rankFill.toFixed(1)} ${rankGap.toFixed(1)}" stroke-dashoffset="0" transform="rotate(-90 408 112)"/>
+    <text x="408" y="118" ${theme.font} font-size="18" font-weight="700" fill="${theme.text}" text-anchor="middle">${rank.grade}</text>
 
     <rect x="482" y="16" width="262" height="188" rx="8" fill="${theme.cardBackground}" stroke="${theme.border}" stroke-width="0.5"/>
     <text x="506" y="44" ${theme.font} font-size="15" font-weight="600" fill="${theme.accent}">Most Used Languages</text>
-    ${languageLegend}
-    ${donutChart}
+    ${createLanguageLegend(languages, 506, 64, 22)}
+    ${createDonutChart(languages, 685, 119, 34)}
 
     <rect x="16" y="220" width="728" height="220" rx="8" fill="${theme.cardBackground}" stroke="${theme.border}" stroke-width="0.5"/>
+    <text x="137" y="293" ${theme.font} font-size="25" font-weight="700" fill="${theme.text}" text-anchor="middle">${total.toLocaleString()}</text>
+    <text x="137" y="311" ${theme.font} font-size="12" fill="${theme.muted}" text-anchor="middle">Total Contributions</text>
+    <text x="137" y="324" ${theme.font} font-size="11" fill="${theme.muted}" text-anchor="middle">${startDate}</text>
 
-    <text x="137" y="${sideNumberY}" ${theme.font} font-size="25" font-weight="700" fill="${theme.text}" text-anchor="middle">${totalContributions.toLocaleString()}</text>
-    <text x="137" y="${sideLabelY}" ${theme.font} font-size="12" fill="${theme.muted}" text-anchor="middle">Total Contributions</text>
-    <text x="137" y="${sideDateY}" ${theme.font} font-size="11" fill="${theme.muted}" text-anchor="middle">Apr 30, 2024 - Present</text>
+    <line x1="259" y1="232" x2="259" y2="372" stroke="${theme.border}" stroke-width="0.5"/><line x1="501" y1="232" x2="501" y2="372" stroke="${theme.border}" stroke-width="0.5"/>
 
-    <line x1="259" y1="232" x2="259" y2="372" stroke="${theme.border}" stroke-width="0.5"/>
-    <line x1="501" y1="232" x2="501" y2="372" stroke="${theme.border}" stroke-width="0.5"/>
-
-    <circle cx="${streakCenterX}" cy="${streakCenterY}" r="${streakRadius}" fill="none" stroke="${theme.accent}" stroke-width="${streakRingStroke}" mask="url(#streak-ring-cut)"/>
+    <circle cx="380" cy="280" r="34" fill="none" stroke="${theme.accent}" stroke-width="2.5" mask="url(#streak-cut)"/>
     ${flameSVG}
-    <text x="${streakCenterX}" y="${streakCenterY + 9}" ${theme.font} font-size="25" font-weight="700" fill="${theme.text}" text-anchor="middle">${streakInfo.current}</text>
-    <text x="${streakCenterX}" y="${streakCenterY + streakRadius + 30}" ${theme.font} font-size="17" font-weight="700" fill="${theme.accent}" text-anchor="middle">Current Streak</text>
-    <text x="${streakCenterX}" y="${streakCenterY + streakRadius + 48}" ${theme.font} font-size="11" fill="${theme.muted}" text-anchor="middle">${formatDate(streakInfo.startDate)} - ${formatDate(streakInfo.endDate)}</text>
+    <text x="380" y="289" ${theme.font} font-size="25" font-weight="700" fill="${theme.text}" text-anchor="middle">${streakInfo.current}</text>
+    <text x="380" y="344" ${theme.font} font-size="17" font-weight="700" fill="${theme.accent}" text-anchor="middle">Current Streak</text>
+    <text x="380" y="362" ${theme.font} font-size="11" fill="${theme.muted}" text-anchor="middle">${formatDate(streakInfo.startDate)} - ${formatDate(streakInfo.endDate)}</text>
 
-    <text x="621" y="${sideNumberY}" ${theme.font} font-size="25" font-weight="700" fill="${theme.text}" text-anchor="middle">${streakInfo.longest}</text>
-    <text x="621" y="${sideLabelY}" ${theme.font} font-size="12" fill="${theme.muted}" text-anchor="middle">Longest Streak</text>
+    <text x="621" y="293" ${theme.font} font-size="25" font-weight="700" fill="${theme.text}" text-anchor="middle">${streakInfo.longest}</text>
+    <text x="621" y="311" ${theme.font} font-size="12" fill="${theme.muted}" text-anchor="middle">Longest Streak</text>
 
-    ${createSpotifyCard(spotify.trackName, spotify.trackColor)}
+    ${createSpotifyCard(spotify.trackName, spotify.trackColor, spotify.isPlaying)}
   </svg>`;
 }
 
 (async () => {
-    console.log("Fetching GitHub data...");
-    const gitHubUser = await fetchGitHubData();
+  const [gitHubUser, spotifyData] = await Promise.all([fetchGitHubData(), fetchSpotifyData()]);
+  const topLanguages = getTopLanguages(gitHubUser.repositories.nodes);
+  const streakData = calculateStreak(gitHubUser.contributionsCollection.contributionCalendar.weeks);
+  const totalStars = gitHubUser.repositories.nodes.reduce((sum, repo) => sum + repo.stargazerCount, 0);
 
-    console.log("Fetching Spotify data...");
-    const spotifyData = await fetchSpotifyData();
+  const totalCommits = (gitHubUser.current?.totalCommitContributions ?? 0) + (gitHubUser.previous?.totalCommitContributions ?? 0) + (gitHubUser.current?.restrictedContributionsCount ?? 0) + (gitHubUser.previous?.restrictedContributionsCount ?? 0);
+  const totalPullRequests = (gitHubUser.current?.totalPullRequestContributions ?? 0) + (gitHubUser.previous?.totalPullRequestContributions ?? 0);
+  const totalIssues = (gitHubUser.current?.totalIssueContributions ?? 0) + (gitHubUser.previous?.totalIssueContributions ?? 0);
 
-    const topLanguages = getTopLanguages(gitHubUser.repositories.nodes);
-    const streakData = calculateStreak(gitHubUser.contributionsCollection.contributionCalendar.weeks);
-    const totalStars = gitHubUser.repositories.nodes.reduce((sum, repo) => sum + repo.stargazerCount, 0);
+  const rank = calculateRank({ commits: gitHubUser.current?.totalCommitContributions ?? 0, pullRequests: totalPullRequests, issues: totalIssues, stars: totalStars, followers: gitHubUser.followers.totalCount });
+  const createdDate = new Date(gitHubUser.createdAt);
+  const accountStartDate = `${createdDate.toLocaleDateString("en-US", { month: "short", day: "numeric" })}, ${createdDate.getFullYear()} - Present`;
 
-    const totalCommits = (gitHubUser.current?.totalCommitContributions ?? 0) + (gitHubUser.previous?.totalCommitContributions ?? 0) + (gitHubUser.current?.restrictedContributionsCount ?? 0) + (gitHubUser.previous?.restrictedContributionsCount ?? 0);
-    const totalPullRequests = (gitHubUser.current?.totalPullRequestContributions ?? 0) + (gitHubUser.previous?.totalPullRequestContributions ?? 0);
-    const totalIssues = (gitHubUser.current?.totalIssueContributions ?? 0) + (gitHubUser.previous?.totalIssueContributions ?? 0);
-
-    const followerCount = gitHubUser.followers.totalCount;
-    const currentYearCommits = gitHubUser.current?.totalCommitContributions ?? 0;
-    const rankPercentile = calculateRank({
-        commits: currentYearCommits,
-        pullRequests: totalPullRequests,
-        issues: totalIssues,
-        stars: totalStars,
-        followers: followerCount,
-    });
-
-    const svgOutput = generateSVG(
-        gitHubUser,
-        streakData,
-        topLanguages,
-        totalStars,
-        totalCommits,
-        totalPullRequests,
-        totalIssues,
-        rankPercentile,
-        spotifyData,
-    );
-
-    fs.writeFileSync("profile-card.svg", svgOutput);
-    console.log("Profile-Card.svg saved");
-})().catch((error) => {
-    console.error(error);
-    process.exit(1);
-});
+  const svgOutput = generateSVG(gitHubUser, streakData, topLanguages, totalStars, totalCommits, totalPullRequests, totalIssues, rank, spotifyData, accountStartDate);
+  fs.writeFileSync("profile-card.svg", svgOutput);
+  console.log("profile-card.svg saved");
+})().catch((err) => { console.error(err); process.exit(1); });
