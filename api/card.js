@@ -88,16 +88,23 @@ function getTopLanguages(repos) {
   return total === 0 ? [] : top.map(([name, { size, color }]) => ({ name: name.length > 13 ? name.slice(0, 12) + "." : name, color, percentage: ((size / total) * 100).toFixed(1) }));
 }
 
-function calculateRank({ commits, pullRequests, issues, reviews, stars, followers }) {
-  const expCdf = (x) => 1 - Math.pow(2, -x), logNormalCdf = (x) => x / (1 + x);
-  const commitsWeight = 5, prsWeight = 2, issuesWeight = 1, reviewsWeight = 1, starsWeight = 2, followersWeight = 1;
-  const totalWeight = commitsWeight + prsWeight + issuesWeight + reviewsWeight + starsWeight + followersWeight;
-  const thresholds = [1, 12.5, 25, 37.5, 50, 62.5, 75, 87.5, 100], levels = ["S", "A+", "A", "A-", "B+", "B", "B-", "C+", "C"];
+function calculateRank({ commits, pullRequests, issues, reviews, stars, streak }) {
+  const commitPts = Math.min(50, (commits / 2000) * 50);
+  const streakPts = Math.min(25, (streak / 30) * 25);
+  const collabPts = Math.min(15, ((pullRequests * 2 + issues + reviews * 2) / 30) * 15);
+  const starPts = Math.min(10, (stars / 10) * 10);
 
-  const rank = 1 - (commitsWeight * expCdf(commits / 250) + prsWeight * expCdf(pullRequests / 50) + issuesWeight * expCdf(issues / 25) + reviewsWeight * expCdf(reviews / 2) + starsWeight * logNormalCdf(stars / 20) + followersWeight * logNormalCdf(followers / 10)) / totalWeight;
-  const percentile = rank * 100;
-  const level = levels[thresholds.findIndex((t) => percentile <= t)] || "B";
-  return { level, percentile };
+  const score = Math.min(98, Math.round(commitPts + streakPts + collabPts + starPts));
+  let level = "B";
+  if (score >= 95) level = "S";
+  else if (score >= 85) level = "A+";
+  else if (score >= 75) level = "A";
+  else if (score >= 65) level = "A-";
+  else if (score >= 55) level = "B+";
+  else if (score >= 45) level = "B";
+  else level = "B-";
+
+  return { level, score };
 }
 
 function createDonutChart(languages, cx, cy, r) {
@@ -133,7 +140,7 @@ function createBottomRow(spotify, viewCount) {
 
   const AX = 32, AY = LINE_Y + 3, AS = 46, AR = 7;
   const artBlock = albumArt ? `<defs><clipPath id="ac"><rect x="${AX}" y="${AY}" width="${AS}" height="${AS}" rx="${AR}"/></clipPath></defs><rect x="${AX - 1}" y="${AY - 1}" width="${AS + 2}" height="${AS + 2}" rx="${AR + 1}" fill="none" stroke="${theme.accent}" stroke-width="1.5" opacity="0.5"/><image href="${albumArt}" x="${AX}" y="${AY}" width="${AS}" height="${AS}" clip-path="url(#ac)" preserveAspectRatio="xMidYMid slice"/>` : "";
-  const TX = albumArt ? AX + AS + 12 : 32, CLIP_W = 210, trackPx = trackName.length * 7.5, artistPx = artist.length * 6.5;
+  const TX = albumArt ? AX + AS + 12 : 32, CLIP_W = 200, trackPx = trackName.length * 7.5, artistPx = artist.length * 6.5;
 
   const makeText = (text, x, y, fs, fw, fill, totalPx, id) => {
     const overflow = Math.round(totalPx - CLIP_W + 8);
@@ -144,16 +151,24 @@ function createBottomRow(spotify, viewCount) {
   };
 
   const textBlock = makeText(trackName, TX, AY + 17, 13, "700", theme.text, trackPx, "t") + makeText(artist, TX, AY + 33, 11, "400", theme.muted, artistPx, "a");
-  const EQX = TX + 218, EQY = AY + 43, EQH = 18, BW = 3, BG = 3, delays = [0, 0.18, 0.07, 0.29, 0.12], periods = [0.85, 0.70, 0.95, 0.75, 0.88];
-  const eqBars = Array.from({ length: 5 }, (_, i) => `<rect class="eq${i}" x="${EQX + i * (BW + BG)}" y="${EQY - EQH}" width="${BW}" height="${EQH}" rx="1.5" fill="${theme.accent}"/>`).join("");
-  const eqStyle = `<style>${Array.from({ length: 5 }, (_, i) => `@keyframes eq${i}{0\%,100\%{transform:scaleY(${(0.2 + i * 0.05).toFixed(2)})}50%{transform:scaleY(1)}}.eq${i}{transform-box:fill-box;transform-origin:bottom;animation:eq${i} ${periods[i]}s ease-in-out${delays[i]}s infinite;}`).join("")}</style>`;
 
-  return `<line x1="16" y1="${LINE_Y}" x2="744" y2="${LINE_Y}" stroke="${theme.border}" stroke-width="0.5"/>${eqStyle}${artBlock}${textBlock}${eqBars}${views}`;
+  const EQX = 398, baseY = AY + 42, BW = 3.5, BG = 3.5;
+  const barsData = [
+    { dur: "0.85s", h: "4;18;8;16;4", y: `${baseY - 4};${baseY - 18};${baseY - 8};${baseY - 16};${baseY - 4}` },
+    { dur: "0.65s", h: "8;14;18;6;8", y: `${baseY - 8};${baseY - 14};${baseY - 18};${baseY - 6};${baseY - 8}` },
+    { dur: "0.95s", h: "16;6;12;18;16", y: `${baseY - 16};${baseY - 6};${baseY - 12};${baseY - 18};${baseY - 16}` },
+    { dur: "0.75s", h: "6;18;10;15;6", y: `${baseY - 6};${baseY - 18};${baseY - 10};${baseY - 15};${baseY - 6}` },
+    { dur: "0.90s", h: "12;4;17;8;12", y: `${baseY - 12};${baseY - 4};${baseY - 17};${baseY - 8};${baseY - 12}` }
+  ];
+
+  const eqBars = barsData.map((b, i) => `<rect x="${EQX + i * (BW + BG)}" y="${baseY - 4}" width="${BW}" height="4" rx="1.5" fill="${theme.accent}"><animate attributeName="height" values="${b.h}" dur="${b.dur}" repeatCount="indefinite"/><animate attributeName="y" values="${b.y}" dur="${b.dur}" repeatCount="indefinite"/></rect>`).join("");
+
+  return `<line x1="16" y1="${LINE_Y}" x2="744" y2="${LINE_Y}" stroke="${theme.border}" stroke-width="0.5"/>${artBlock}${textBlock}${eqBars}${views}`;
 }
 
 function generateSVG(userData, streak, languages, stars, commits, prs, issues, rank, spotify, viewCount, startDateText) {
   const total = userData.contributionsCollection.contributionCalendar.totalContributions;
-  const rankCirc = 2 * Math.PI * 38, rankFill = (1 - rank.percentile / 100) * rankCirc;
+  const rankCirc = 2 * Math.PI * 38, rankFill = (rank.score / 100) * rankCirc;
   const sCX = 380, sCY = 280, sR = 34, sStroke = 2.5;
 
   return `<svg width="760" height="456" viewBox="0 0 760 456" xmlns="http://www.w3.org/2000/svg" role="img">
@@ -175,8 +190,8 @@ function generateSVG(userData, streak, languages, stars, commits, prs, issues, r
 
   <rect x="482" y="16" width="262" height="188" rx="8" fill="${theme.cardBackground}" stroke="${theme.border}" stroke-width="0.5"/>
   <text x="506" y="44" ${theme.font} font-size="15" font-weight="600" fill="${theme.accent}">Most Used Languages</text>
-  ${createLanguageLegend(languages, 506, 64, 22)}
-  ${createDonutChart(languages, 685, 119, 34)}
+  ${createLanguageLegend(languages, 506, 62, 22)}
+  ${createDonutChart(languages, 685, 106, 34)}
 
   <rect x="16" y="220" width="728" height="220" rx="8" fill="${theme.cardBackground}" stroke="${theme.border}" stroke-width="0.5"/>
   <text x="137" y="293" ${theme.font} font-size="25" font-weight="700" fill="${theme.text}" text-anchor="middle">${total.toLocaleString()}</text>
@@ -211,7 +226,7 @@ module.exports = async (req, res) => {
     const issues = (gitHubUser.openIssues?.totalCount ?? 0) + (gitHubUser.closedIssues?.totalCount ?? 0);
     const reviews = gitHubUser.reviews?.totalPullRequestReviewContributions ?? 0;
 
-    const rank = calculateRank({ commits, pullRequests: prs, issues, reviews, stars, followers: gitHubUser.followers.totalCount });
+    const rank = calculateRank({ commits, pullRequests: prs, issues, reviews, stars, streak: streak.current });
     const accDate = new Date(gitHubUser.createdAt);
     const startDateText = `${formatDate(accDate)}, ${accDate.getFullYear()} - Present`;
 
