@@ -18,14 +18,31 @@ async function executeGraphQL(query, variables) {
 async function fetchSpotifyData() {
   const fallback = { trackName: null, trackColor: spotifyGreen, isPlaying: false };
   try {
-    const res = await fetch(`https://spotify-github-profile.kittinanx.com/api/view?uid=${spotifyUserId}`, { headers: { "User-Agent": "profile-card-generator" }, signal: AbortSignal.timeout(5000) });
-    if (!res.ok) return fallback;
+    const url = `https://spotify-github-profile.kittinanx.com/api/view?uid=${spotifyUserId}&ts=${Date.now()}`;
+    const res = await fetch(url, {
+      headers: { "Cache-Control": "no-cache" },
+      signal: AbortSignal.timeout(15000)
+    });
+    if (!res.ok) {
+      console.warn(`Spotify API status: ${res.status}`);
+      return fallback;
+    }
     const data = await res.text();
-    if (/class="not-play"/.test(data)) return fallback;
-    const grab = (cls) => data.match(new RegExp(`class="${cls}"[^>]*>([^<]+)<`))?.[1] ? decodeEntities(data.match(new RegExp(`class="${cls}"[^>]*>([^<]+)<`))[1]).trim() : null;
+    if (/not-play/i.test(data)) return fallback;
+
+    const grab = (cls) => {
+      const match = data.match(new RegExp(`class="[^"]*\\b${cls}\\b[^"]*"[^>]*>([\\s\\S]*?)<\\/`));
+      if (!match) return null;
+      const raw = match[1].replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1").replace(/<[^>]+>/g, "");
+      return decodeEntities(raw).trim() || null;
+    };
+
     const song = grab("song"), artist = grab("artist");
     return song ? { trackName: artist ? `${song} — ${artist}` : song, trackColor: spotifyGreen, isPlaying: true } : fallback;
-  } catch { return fallback; }
+  } catch (err) {
+    console.warn("Spotify fetch failed:", err.message);
+    return fallback;
+  }
 }
 
 async function fetchGitHubData() {
